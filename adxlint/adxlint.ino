@@ -9,7 +9,7 @@
 ADXL345 adxl = ADXL345();
 unsigned volatile long timeout = 0;
 
-void testalarmOn() {
+void showSetupCompleted() {
    digitalWrite(ledPin,HIGH);
   digitalWrite(soundPin,HIGH);
   delay(200); //200
@@ -33,6 +33,7 @@ void setup() {
   //Setup builtin LED
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(soundPin, OUTPUT);
+  showSetupCompleted();
 }
 
 void setupADXL() {
@@ -57,33 +58,12 @@ void setupADXL() {
   adxl.doubleTapINT(1);
   adxl.singleTapINT(1);
   wdt_enable(WDTO_2S);
-  testalarmOn();
 }
 
 void loop() {
-  //alarmOn();
   int x,y,z;   
   wdt_reset();
-//  adxl.readAccel(&x, &y, &z); 
-//  if (millis() > timeout) {
-//     Serial.print(x);
-//  Serial.print(", ");
-//  Serial.print(y);
-//  Serial.print(", ");
-//  Serial.println(z);
-//  timeout = millis() + 2000;
-//  alarmOn();
-//  }
   ADXL_ISR();
-//  delay(400);
-//  if (adxl.error_code == ADXL345_READ_ERROR) {
-//    digitalWrite(ledPin,HIGH);
-//    //timeout = millis(); + 3000;
-//  }
-
-//  if (millis() > timeout) {
-//    digitalWrite(ledPin,LOW);
-//  }
 //  Serial.print(x);
 //  Serial.print(", ");
 //  Serial.print(y);
@@ -103,11 +83,5 @@ void ADXL_ISR() {
     //Serial.println("*** FREE FALL ***");
     //add code here to do when free fall is sensed
     alarmOn();
-  } else if(adxl.triggered(interrupts, ADXL345_ACTIVITY)){
-    //Serial.println("*** ACTIVITY ***"); 
-     //add code here to do when activity is sensed
-     //alarmOn();
-  } else if (adxl.triggered(interrupts, ADXL345_INACTIVITY)) {
-    //Serial.println("Nothing");
-  } 
+  }
 }
