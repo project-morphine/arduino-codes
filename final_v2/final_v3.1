@@ -64,9 +64,9 @@ void printToSerial(double ax, double ay, double az, double anet, int stepCount, 
     Serial.print("Net Acc: "); Serial.print(anet); Serial.println(" g"); 
 
     // Display the respective xyz rotational acceleration values in degree/s
-    Serial.print("GyroX: "); Serial.print(gx);Serial.print(" rad/s");
-    Serial.print("GyroY: "); Serial.print(gy);Serial.print(" rad/s");
-    Serial.print("GyroZ: "); Serial.print(gz);Serial.print(" rad/s");
+    Serial.print("GyroX: "); Serial.print(gx);Serial.print(" degree/s");
+    Serial.print("GyroY: "); Serial.print(gy);Serial.print(" degree/s");
+    Serial.print("GyroZ: "); Serial.print(gz);Serial.print(" degree/s");
 
     // Display the net gyroscopic acceleration (acceleration is measured in degree/s)
     Serial.print("Net Gyro: "); Serial.print(gnet); Serial.println(" degree/s"); 
