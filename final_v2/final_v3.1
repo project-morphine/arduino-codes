@@ -1,0 +1,159 @@
+// useful links to refer to
+// integration of esp32 with mpu6050 https://randomnerdtutorials.com/esp32-mpu-6050-accelerometer-gyroscope-arduino/
+// research paper on anet, gnet combination algorithm https://www.hindawi.com/journals/js/2015/452078/
+
+#include <Wire.h>            // include the Wire h library so we can communicate with I2C devices
+#include <Adafruit_MPU6050.h> // include the mpu6050 library
+#include <Adafruit_Sensor.h>  
+#include <avr/wdt.h>         // include the watchdog timer library to enable auto reboot 
+#define soundPin 25           // define the pins for buzzer and leds (follow the gpio pinout for esp32)
+#define greenPin 26
+#define redPin 27
+
+Adafruit_MPU6050 mpu;         // Create an Adafruit_MPU6050 object called mpu to handle the sensor
+double ax, ay, az, anet;      // initialize the accelerations in xyz directions as floats 
+double gx, gy, gz;            // initialize the orientation in xyz directions 
+
+const float g = 9.81;        // initialize gravitatinal acceleration
+const float LFT = 0.3;       // lower fall threshold
+const float UFT = 2.4;       // upper fall threshold
+const float UFT_G = 210;     // upper fall gyroscope threshold
+const float ST = 1.25;       // step count threshold
+
+bool fallFlag = false;       // initialize flags and alarm trigger
+bool stepFlag = false;
+bool alarmTrig = false;
+
+unsigned long fallTimer = 0;    // initialize timers
+unsigned long alarmTimer = 0;
+unsigned long stepTimer = 0;
+unsigned long printTimer = 0;
+
+const long fallInterval = 500;    // initialize intervals
+const long alarmInterval = 125;
+const long stepInterval = 100;
+const long printInterval = 200;
+
+const int ledPin =  LED_BUILTIN;  //define built in led
+int ledState = LOW;               // set the built in led state to low
+
+unsigned int stepCount = 0;       // initialize the step count as 0
+const double pi = 3.14159265358979323846 // define pi value
+
+void alarmOn() {
+  digitalWrite(ledPin,HIGH);     // set the built in led pin to high
+  digitalWrite(soundPin,HIGH);   // set the buzzer pin to high
+  digitalWrite(redPin,HIGH);     // set the red led pin to high
+  delay(200);
+  digitalWrite(ledPin,LOW);      // set the followings to low
+  digitalWrite(soundPin,LOW);
+  digitalWrite(redPin,LOW);
+}
+
+void printToSerial(double ax, double ay, double az, double anet, int stepCount, bool alarmTrig, double gx, double gy, double gz, double gnet) {
+  // print to serial after every print interval
+  if (millis() - printTimer >= printInterval) { 
+    printTimer = millis();
+
+    // Display the respective xyz acceleration values in g
+    Serial.print("AccX: "); Serial.print(ax);Serial.print(" g");
+    Serial.print("AccY: "); Serial.print(ay);Serial.print(" g");
+    Serial.print("AccZ: "); Serial.print(az);Serial.print(" g");
+
+    // Display the net acceleration (acceleration is measured in g)
+    Serial.print("Net Acc: "); Serial.print(anet); Serial.println(" g"); 
+
+    // Display the respective xyz rotational acceleration values in degree/s
+    Serial.print("GyroX: "); Serial.print(gx);Serial.print(" rad/s");
+    Serial.print("GyroY: "); Serial.print(gy);Serial.print(" rad/s");
+    Serial.print("GyroZ: "); Serial.print(gz);Serial.print(" rad/s");
+
+    // Display the net gyroscopic acceleration (acceleration is measured in degree/s)
+    Serial.print("Net Gyro: "); Serial.print(gnet); Serial.println(" degree/s"); 
+  
+    // Print number of steps
+    Serial.print("Steps: "); Serial.println(stepCount); 
+
+    if (alarmTrig) {
+      // print "Fall detected!" if alarmTrig function is True
+      Serial.println("Fall detected!");
+    }
+    // else print a new blank line
+    Serial.println(" ");
+  }
+}
+
+void setup() {
+  Serial.begin(9600);                               // set the baud rate to 9600
+  if (!mpu.begin()){                                // initialize the mpu6050 
+    Serial.println("Fail to find MPU6050!");
+    while (1){
+      delay(10);
+    }
+  }
+  Serial.println ("MPU6050 found!")
+  
+  mpu.setAccelerometerRange(MPU6050_RANGE_2_G);      // set the accelerometer range to +-2g
+
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);           // set the gyroscope range to +-500 degree
+
+  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);         // set the filter bandwidth to 5 Hz
+  
+  pinMode(LED_BUILTIN, OUTPUT);       // setup the built in led
+  pinMode(soundPin, OUTPUT);          // setups for buzzer and led pins
+  pinMode(greenPin, OUTPUT);
+  pinMode(redPin,OUTPUT);
+  wdt_enable(WDTO_2S);                // enable watchdog timer at a delay of 2 seconds
+}
+
+void loop() {
+  wdt_reset();                        // reset the watchdog timer
+
+  sensors_event_t a, g;               // get new sensor events with the current readings
+  mpu.getEvent(&a, &g);
+
+  ax = a.acceleration.x/g;              // assign the respective values into variables
+  ay = a.acceleration.y/g;              // unit: g (gravitational acceleration)
+  az = a.acceleration.z/g;
+
+  gx = g.gyro.x*180/2*pi;               // unit: degrees/second
+  gy = g.gyro.y*180/2*pi;
+  gz = g.gyro.z*180/2*pi;
+  
+  anet = sqrt(ax*ax + ay*ay + az*az);       // getting the anet value
+  gnet = sqrt(gx*gx + gy*gy + gz*gz);       // getting the gnet value
+  
+  // ====step counting==== //
+  if (anet > ST && stepFlag == false) {      // if anet is larger than step threshold and step flag equal false
+    stepCount += 1;                          // increment step count by 1
+    stepFlag = true;                         // set the step flag to true
+    stepTimer = millis();                    // assign the current elasped time to the step timer
+    
+  } else if (stepFlag == true) {
+    // Minimum delay for registering a new step
+    if (anet <= ST && millis() - stepTimer >= stepInterval) {   // if anet is smaller than step threshold and the time taken is larger than step interval
+      stepFlag = false;                                         // set step flag to false
+    }
+  }
+  
+  // ====Fall Detection - Lower fall threshold detection==== //
+  if (anet < LFT && fallFlag == false) {                        // if anet is smaller than lower fall threshold and fall flag is false
+                                                                //fallFlag means that LFT has been reached
+    fallFlag = true;                                            // set fall flag to true
+    fallTimer = millis();                                       // assign the elasped time to fallTimer
+  }
+
+  // ====Fall Detection - Upper fall threshold detection==== //
+  if (fallFlag == true) {                                       // if fallFlag is true, aka exceeded lower fall threshold
+    if (millis() - fallTimer >= fallInterval) {                 // check the time taken with predefined fall interval
+      fallFlag = false;                                         //  reset the fall flag to false 
+    } else if (anet > UFT && gnet > UFT_G && millis() - fallTimer < fallInterval) {     // if anet larger than upper fall thresholds and time taken within fall interval
+      alarmTrig = true;                                                 // set the alarmTrig to true
+    }
+   }
+    // ====Fall Alarm==== //
+   if (alarmTrig) {                             // if alarmTrig is True
+   alarmOn();                                   // call the alarmOn function
+   }
+   printToSerial(ax, ay, az, anet, stepCount, alarmTrig, gx, gy, gz, gnet);         // print the accelerations, anet, step count, alarm trigger status and gyro values to serial monitor
+}
